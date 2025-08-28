@@ -1,5 +1,5 @@
 {
   "name": "ethernet_patch",
-  "dependencies": ["esp32", "ethernet"],
-  "after": ["ethernet"]
+  "dependencies": ["esp32", "ethernet", "esp_eth", "driver"],
+  "after": ["ethernet", "esp_eth"]
 }
