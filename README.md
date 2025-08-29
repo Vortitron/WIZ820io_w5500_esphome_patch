@@ -5,6 +5,7 @@ This external component patches the ESP-IDF W5500 Ethernet driver to accept W550
 ## Problem
 
 Some W5500 Ethernet modules (particularly certain clones or hardware revisions) return a version register value of `0x82` instead of `0x04`. The standard ESP-IDF W5500 driver rejects these modules during initialisation, causing ethernet connectivity to fail.
+Now the repo name says WIZ820io as that's what they were sold to me as... but it is actually for a W5500 lite (v455)
 
 ## Solution
 
@@ -17,21 +18,24 @@ This patch intercepts the W5500 MAC creation process and provides a custom SPI d
 
 ## Usage
 
-Add this external component to your ESPHome configuration:
+Stick this in your YAML and smoke it:
 
 ```yaml
 external_components:
   - source: github://Vortitron/WIZ820io_w5500_esphome_patch
     components: [ethernet_patch]
 
+ethernet_patch:
+
 ethernet:
   type: W5500
-  clk_pin: GPIO18
-  mosi_pin: GPIO23
-  miso_pin: GPIO19
-  cs_pin: GPIO5
-  interrupt_pin: GPIO4
-  reset_pin: GPIO2
+  mosi_pin: GPIO13
+  miso_pin: GPIO12
+  clk_pin: GPIO14
+  cs_pin: GPIO15
+  reset_pin: GPIO26
+  interrupt_pin: GPIO27
+  clock_speed: 12MHz
 ```
 
 ## How It Works
