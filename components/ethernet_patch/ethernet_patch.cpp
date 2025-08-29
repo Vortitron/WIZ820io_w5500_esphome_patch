@@ -7,6 +7,7 @@
 #ifdef esp_eth_mac_new_w5500
 #undef esp_eth_mac_new_w5500
 #endif
+// Declare the real symbol for use from our TU; will be provided by IDF
 extern "C" esp_eth_mac_t *esp_eth_mac_new_w5500(const eth_w5500_config_t *config, const eth_mac_config_t *mac_config);
 
 static const char *TAG = "ethernet_patch";

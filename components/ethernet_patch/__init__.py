@@ -7,5 +7,5 @@ AUTO_LOAD = ["ethernet"]
 CONFIG_SCHEMA = cv.Schema({})
 
 async def to_code(config):
-    # Keep only the symbol remap; our C++ TU undefines it locally before calling IDF
-    cg.add_build_flag("-Desp_eth_mac_new_w5500=esp_eth_mac_new_w5500_patched")
+    # Intercept all calls to esp_eth_mac_new_w5500 at link time
+    cg.add_build_flag("-Wl,--wrap=esp_eth_mac_new_w5500")
