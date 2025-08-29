@@ -3,6 +3,12 @@
 #include <string.h>
 #include <stdlib.h>
 
+// Avoid global -D remap inside this TU when we need to call the real IDF API
+#ifdef esp_eth_mac_new_w5500
+#undef esp_eth_mac_new_w5500
+#endif
+extern "C" esp_eth_mac_t *esp_eth_mac_new_w5500(const eth_w5500_config_t *config, const eth_mac_config_t *mac_config);
+
 static const char *TAG = "ethernet_patch";
 
 // SPI context structure used by our custom driver
