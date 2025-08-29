@@ -2,6 +2,8 @@
 #include "ethernet_patch.h"
 #include <string.h>
 #include <stdlib.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 // Avoid global -D remap inside this TU when we need to call the real IDF API
 #ifdef esp_eth_mac_new_w5500
@@ -16,6 +18,7 @@ static const char *TAG = "ethernet_patch";
 typedef struct {
     spi_device_handle_t handle;
     bool version_patched;
+    SemaphoreHandle_t lock;
 } patch_spi_ctx_t;
 
 static void *patch_spi_init(const void *cfg) {
@@ -32,6 +35,11 @@ static void *patch_spi_init(const void *cfg) {
         spi_cfg.command_bits = 16; // W5500 address phase
         spi_cfg.address_bits = 8;  // W5500 control phase
     }
+    // Cap SPI clock for stability on long jumpers / lite boards
+    const int max_clock_hz = 12000000; // 12 MHz conservative
+    if (spi_cfg.clock_speed_hz > max_clock_hz) {
+        spi_cfg.clock_speed_hz = max_clock_hz;
+    }
 
     esp_err_t ret = spi_bus_add_device(w5500_cfg->spi_host_id, &spi_cfg, &ctx->handle);
     if (ret != ESP_OK) {
@@ -41,6 +49,13 @@ static void *patch_spi_init(const void *cfg) {
     }
 
     ctx->version_patched = false;
+    ctx->lock = xSemaphoreCreateMutex();
+    if (!ctx->lock) {
+        spi_bus_remove_device(ctx->handle);
+        free(ctx);
+        ESP_LOGE(TAG, "Failed to create SPI mutex");
+        return NULL;
+    }
     ESP_LOGI(TAG, "Custom W5500 SPI driver initialized");
     return ctx;
 }
@@ -52,6 +67,7 @@ static esp_err_t patch_spi_deinit(void *ctx_ptr) {
             ESP_LOGI(TAG, "W5500 version 0x82 was patched to 0x04");
         }
         spi_bus_remove_device(ctx->handle);
+        if (ctx->lock) vSemaphoreDelete(ctx->lock);
         free(ctx);
     }
     return ESP_OK;
@@ -61,14 +77,20 @@ static esp_err_t patch_spi_read(void *ctx_ptr, uint32_t cmd, uint32_t addr, void
     patch_spi_ctx_t *ctx = (patch_spi_ctx_t*)ctx_ptr;
 
     spi_transaction_t trans = {
-        .flags = len <= 4 ? SPI_TRANS_USE_RXDATA : 0,
-        .cmd = cmd,
-        .addr = addr,
+        .flags = (uint32_t)(len <= 4 ? SPI_TRANS_USE_RXDATA : 0),
+        .cmd = (uint16_t)cmd,
+        .addr = (uint32_t)addr,
         .length = 8 * len,
         .rx_buffer = data
     };
 
-    esp_err_t ret = spi_device_polling_transmit(ctx->handle, &trans);
+    esp_err_t ret;
+    if (ctx->lock && xSemaphoreTake(ctx->lock, pdMS_TO_TICKS(50)) == pdTRUE) {
+        ret = spi_device_polling_transmit(ctx->handle, &trans);
+        xSemaphoreGive(ctx->lock);
+    } else {
+        return ESP_ERR_TIMEOUT;
+    }
 
     if (ret == ESP_OK && (trans.flags & SPI_TRANS_USE_RXDATA) && len <= 4) {
         memcpy(data, trans.rx_data, len);
@@ -94,13 +116,18 @@ static esp_err_t patch_spi_write(void *ctx_ptr, uint32_t cmd, uint32_t addr, con
     patch_spi_ctx_t *ctx = (patch_spi_ctx_t*)ctx_ptr;
 
     spi_transaction_t trans = {
-        .cmd = cmd,
-        .addr = addr,
+        .cmd = (uint16_t)cmd,
+        .addr = (uint32_t)addr,
         .length = 8 * len,
         .tx_buffer = data
     };
 
-    return spi_device_polling_transmit(ctx->handle, &trans);
+    if (ctx->lock && xSemaphoreTake(ctx->lock, pdMS_TO_TICKS(50)) == pdTRUE) {
+        esp_err_t ret = spi_device_polling_transmit(ctx->handle, &trans);
+        xSemaphoreGive(ctx->lock);
+        return ret;
+    }
+    return ESP_ERR_TIMEOUT;
 }
 
 // Call site remap target. Other translation units will be forced to call this
